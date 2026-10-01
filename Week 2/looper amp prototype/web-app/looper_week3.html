@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looper Amp - Week 3: Gain and Tone</title>
+<style>
+  :root { --bg:#14202b; --panel:#1d2c3b; --line:#2f4358; --text:#e8eef4; --dim:#8da2b5; --accent:#6ee7c8; --wave:#4a6a86; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family: "Trebuchet MS", "Segoe UI", sans-serif; display:flex; justify-content:center; padding:32px 16px; }
+  main { width:100%; max-width:760px; }
+  h1 { font-size:26px; margin:0 0 4px; letter-spacing:.3px; }
+  p.sub { margin:0 0 24px; color:var(--dim); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:16px; }
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center; color:var(--dim); cursor:pointer; }
+  .drop.over { border-color:var(--accent); color:var(--text); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  button { background:#2a3f54; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px 18px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button:focus-visible, .drop:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button.primary { background:var(--accent); color:#0b1a22; border-color:var(--accent); font-weight:bold; }
+  button.on { border-color:var(--accent); color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .ctl { display:grid; grid-template-columns:70px 1fr 50px; gap:12px; align-items:center; margin-bottom:14px; }
+  .ctl output { text-align:right; color:var(--accent); font-variant-numeric:tabular-nums; }
+  .hint { color:var(--dim); font-size:13px; margin:-8px 0 14px 82px; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  canvas { width:100%; height:140px; display:block; background:#101a24; border-radius:8px; }
+  .meta { display:flex; justify-content:space-between; color:var(--dim); font-size:14px; margin-top:10px; }
+  #status { color:var(--accent); }
+  @media (prefers-reduced-motion: no-preference) { button { transition:border-color .15s; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Looper Amp: gain and tone</h1>
+  <p class="sub">Load a clip, press play, then move Gain and Tone while it loops.</p>
+
+  <div class="panel">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose an audio file">
+      Drop a guitar clip here, or click to choose a file (mp3, wav, m4a)
+    </div>
+    <input type="file" id="file" accept="audio/*" hidden>
+    <div class="row" style="margin-top:12px">
+      <button id="demo">Use a built-in test sound</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <canvas id="wave" aria-label="Waveform of the loaded clip"></canvas>
+    <div class="meta"><span id="status">Load a clip to start</span><span id="time">0:00.0 / 0:00.0</span></div>
+    <div class="row" style="margin-top:14px">
+      <button id="play" class="primary" disabled>Play</button>
+      <button id="pause" disabled>Pause</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="loop" class="on" aria-pressed="true" disabled>Loop: on</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ctl"><label for="gain">Gain</label><input type="range" id="gain" min="0" max="100" value="30"><output id="gainOut">30</output></div>
+    <div class="hint">Low is clean, high is crunchy and saturated.</div>
+    <div class="ctl"><label for="tone">Tone</label><input type="range" id="tone" min="0" max="100" value="50"><output id="toneOut">50</output></div>
+    <div class="hint">50 is flat. Lower is darker and warmer, higher is brighter.</div>
+    <div class="row"><button id="bypass" aria-pressed="false">Bypass effects: off</button></div>
+  </div>
+</main>
+
+<script>
+// ---------- Audio setup ----------
+// Signal path: source -> input -> [preGain -> shaper -> postGain -> lowShelf -> highShelf] -> output -> speakers
+let ctx = null, input, output, preGain, shaper, postGain, lowShelf, highShelf;
+let bypassed = false;
+let buffer = null, source = null;
+let playing = false, loopOn = true;
+let startedAt = 0, offset = 0, peaks = [];
+
+function initAudio() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  input = ctx.createGain();
+  output = ctx.createGain();
+  preGain = ctx.createGain();
+  shaper = ctx.createWaveShaper();
+  shaper.curve = makeCurve();
+  shaper.oversample = "4x";          // reduces harsh aliasing from distortion
+  postGain = ctx.createGain();
+  lowShelf = ctx.createBiquadFilter();
+  lowShelf.type = "lowshelf";  lowShelf.frequency.value = 700;
+  highShelf = ctx.createBiquadFilter();
+  highShelf.type = "highshelf"; highShelf.frequency.value = 700;
+  preGain.connect(shaper); shaper.connect(postGain);
+  postGain.connect(lowShelf); lowShelf.connect(highShelf); highShelf.connect(output);
+  output.connect(ctx.destination);
+  route();
+  setGain($("gain").value);
+  setTone($("tone").value);
+}
+
+// Soft-clipping curve: smooth tanh shape, like an overdriven amp stage.
+function makeCurve() {
+  const n = 2048, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.tanh(x * 2); }
+  return curve;
+}
+
+// Gain knob (0-100): pushes the signal harder into the shaper, from 0 dB up to 36 dB.
+function setGain(v) {
+  v = Number(v) / 100;
+  const db = v * 36;
+  const t = ctx ? ctx.currentTime : 0;
+  if (!ctx) return;
+  preGain.gain.setTargetAtTime(Math.pow(10, db / 20), t, 0.02);
+  postGain.gain.setTargetAtTime(0.75 - 0.35 * v, t, 0.02);   // keeps loudness roughly even
+}
+
+// Tone knob (0-100): tilt EQ. 50 = flat, lower = darker, higher = brighter (+/- 12 dB).
+function setTone(v) {
+  if (!ctx) return;
+  const tilt = ((Number(v) - 50) / 50) * 12, t = ctx.currentTime;
+  lowShelf.gain.setTargetAtTime(-tilt, t, 0.02);
+  highShelf.gain.setTargetAtTime(tilt, t, 0.02);
+}
+
+// Sends the signal through the effects, or straight past them for A/B comparison.
+function route() {
+  input.disconnect();
+  input.connect(bypassed ? output : preGain);
+}
+
+// ---------- Loading audio ----------
+async function loadFile(file) {
+  initAudio();
+  setStatus("Decoding " + file.name + "...");
+  try {
+    const data = await file.arrayBuffer();
+    setBuffer(await ctx.decodeAudioData(data), file.name);
+  } catch (e) {
+    setStatus("Could not read that file. Try a wav or mp3.");
+  }
+}
+
+// Plucked-string chord made with the Karplus-Strong algorithm (no file needed).
+function makeTestSound() {
+  initAudio();
+  const sr = ctx.sampleRate, secs = 4, buf = ctx.createBuffer(1, sr * secs, sr);
+  const out = buf.getChannelData(0);
+  [110, 164.81, 220, 277.18].forEach((freq, i) => {   // A minor-ish chord, strummed
+    const len = Math.round(sr / freq), ring = new Float32Array(len);
+    for (let n = 0; n < len; n++) ring[n] = Math.random() * 2 - 1;
+    const start = Math.floor(i * 0.06 * sr);
+    for (let n = start, p = 0; n < out.length; n++, p = (p + 1) % len) {
+      const next = (p + 1) % len;
+      out[n] += ring[p] * 0.25;
+      ring[p] = (ring[p] + ring[next]) * 0.4985;
+    }
+  });
+  setBuffer(buf, "built-in test sound");
+}
+
+function setBuffer(buf, name) {
+  stop();
+  buffer = buf;
+  computePeaks();
+  ["play", "pause", "stop", "loop"].forEach(id => $(id).disabled = false);
+  setStatus("Loaded: " + name);
+}
+
+// ---------- Transport ----------
+function play() {
+  if (!buffer || playing) return;
+  ctx.resume();
+  source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = loopOn;
+  source.connect(input);
+  source.onended = () => { if (playing) { playing = false; offset = 0; setStatus("Finished"); } };
+  startedAt = ctx.currentTime - offset;
+  source.start(0, offset);
+  playing = true;
+  setStatus(loopOn ? "Playing (looping)" : "Playing");
+}
+
+function pause() {
+  if (!playing) return;
+  offset = position();
+  halt();
+  setStatus("Paused");
+}
+
+function stop() {
+  if (playing) halt();
+  offset = 0;
+  if (buffer) setStatus("Stopped");
+}
+
+function halt() {            // stops the current source cleanly
+  playing = false;
+  source.onended = null;
+  source.stop();
+  source.disconnect();
+}
+
+function position() {
+  if (!buffer) return 0;
+  if (!playing) return offset;
+  const t = ctx.currentTime - startedAt;
+  return loopOn ? t % buffer.duration : Math.min(t, buffer.duration);
+}
+
+function toggleLoop() {
+  loopOn = !loopOn;
+  if (source) source.loop = loopOn;
+  $("loop").textContent = "Loop: " + (loopOn ? "on" : "off");
+  $("loop").classList.toggle("on", loopOn);
+  $("loop").setAttribute("aria-pressed", loopOn);
+  if (playing) setStatus(loopOn ? "Playing (looping)" : "Playing");
+}
+
+// ---------- Drawing ----------
+const canvas = document.getElementById("wave"), g = canvas.getContext("2d");
+
+function computePeaks() {
+  const w = canvas.clientWidth, data = buffer.getChannelData(0), step = Math.floor(data.length / w);
+  peaks = [];
+  for (let x = 0; x < w; x++) {
+    let max = 0;
+    for (let i = x * step; i < (x + 1) * step; i += 8) max = Math.max(max, Math.abs(data[i] || 0));
+    peaks.push(max);
+  }
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; if (buffer) computePeaks(); }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = "#4a6a86";
+  const mid = h / 2, norm = Math.max(0.01, ...peaks);
+  peaks.forEach((p, x) => { const bar = (p / norm) * (h * 0.45); g.fillRect(x, mid - bar, 1, bar * 2 || 1); });
+  if (buffer) {
+    const x = (position() / buffer.duration) * w;
+    g.fillStyle = "#6ee7c8"; g.fillRect(x, 0, 2, h);
+    $("time").textContent = fmt(position()) + " / " + fmt(buffer.duration);
+  }
+  requestAnimationFrame(draw);
+}
+
+// ---------- Helpers and wiring ----------
+function $(id) { return document.getElementById(id); }
+function setStatus(t) { $("status").textContent = t; }
+function fmt(s) { const m = Math.floor(s / 60); return m + ":" + (s % 60).toFixed(1).padStart(4, "0"); }
+
+$("play").onclick = play;
+$("pause").onclick = pause;
+$("stop").onclick = stop;
+$("loop").onclick = toggleLoop;
+$("gain").oninput = e => { $("gainOut").textContent = e.target.value; setGain(e.target.value); };
+$("tone").oninput = e => { $("toneOut").textContent = e.target.value; setTone(e.target.value); };
+$("bypass").onclick = () => {
+  initAudio(); bypassed = !bypassed; route();
+  $("bypass").textContent = "Bypass effects: " + (bypassed ? "on" : "off");
+  $("bypass").classList.toggle("on", bypassed);
+  $("bypass").setAttribute("aria-pressed", bypassed);
+};
+// Week 4: the Arduino knobs will call these same functions with a 0-100 value.
+window.knobs = { gain: v => { $("gain").value = v; $("gainOut").textContent = Math.round(v); setGain(v); },
+                 tone: v => { $("tone").value = v; $("toneOut").textContent = Math.round(v); setTone(v); } };
+$("demo").onclick = makeTestSound;
+$("drop").onclick = () => $("file").click();
+$("drop").onkeydown = e => { if (e.key === "Enter" || e.key === " ") $("file").click(); };
+$("file").onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+$("drop").ondragover = e => { e.preventDefault(); $("drop").classList.add("over"); };
+$("drop").ondragleave = () => $("drop").classList.remove("over");
+$("drop").ondrop = e => { e.preventDefault(); $("drop").classList.remove("over"); e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]); };
+document.addEventListener("keydown", e => {
+  if (e.code === "Space" && buffer && e.target.tagName !== "BUTTON") { e.preventDefault(); playing ? pause() : play(); }
+});
+
+draw();
+</script>
+</body>
+</html>
