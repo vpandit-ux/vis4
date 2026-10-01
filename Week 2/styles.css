@@ -1,0 +1,42 @@
+body{
+				margin:0;
+			}
+
+			#navbar {
+			    background-color: #333;
+			    color: white;
+			    height: 150px;
+			    width: 100%;
+			    text-align: center;
+			}
+
+			#main-content {
+    display: flex;
+    height: calc(100vh - 150px);
+}
+
+.sidebar {
+    background-color: #ddd;
+    width: 400px;
+    height: 100%;
+}
+
+.content {
+    background-color: #fff;
+    flex: 1;
+    padding: 20px;
+}
+
+@media (max-width: 800px) {
+    .sidebar {
+        width: 200px;
+        background-color: green;
+    }
+}
+
+@media (max-width: 800px) {
+    .sidebar {
+        width: 200px;
+        background-color: green;
+    }
+}
