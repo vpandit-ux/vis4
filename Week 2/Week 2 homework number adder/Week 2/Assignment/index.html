@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Val's Number Adder</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>VAL NUMBER ADDER</h1>
+        <h4>ITEM 1</h4>
+        <h4>ITEM 2</h4>
+        <h4>ITEM 3</h4>
+    </div>
+    
+    <div class="container">
+        <div class="sidebar">
+            <h3>RESULT</h3>
+            <p id="resultId">0</p>
+        </div>
+        
+        <div class="main-content">
+            <h3>CONTROL CENTER</h3>
+            <div class="button-group">
+                <button id="btnMinus2">-2</button>
+                <button id="btnMinus1">-1</button>
+                <button id="btnReset">Reset</button>
+                <button id="btnPlus1">+1</button>
+                <button id="btnPlus2">+2</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var total = 0;
+
+        document.getElementById("btnMinus2").addEventListener("click", function() {
+            total = total - 2;
+            document.querySelector("#resultId").innerHTML = total;
+        });
+
+        document.getElementById("btnMinus1").addEventListener("click", function() {
+            total = total - 1;
+            document.querySelector("#resultId").innerHTML = total;
+        });
+
+        document.getElementById("btnReset").addEventListener("click", function() {
+            total = 0;
+            document.querySelector("#resultId").innerHTML = total;
+        });
+
+        document.getElementById("btnPlus1").addEventListener("click", function() {
+            total = total + 1;
+            document.querySelector("#resultId").innerHTML = total;
+        });
+
+        document.getElementById("btnPlus2").addEventListener("click", function() {
+            total = total + 2;
+            document.querySelector("#resultId").innerHTML = total;
+        });
+    </script>
+</body>
+</html>
