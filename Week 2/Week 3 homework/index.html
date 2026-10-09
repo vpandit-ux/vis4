@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Val's Number Adder</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>VAL NUMBER ADDER</h1>
+        <h4>ITEM 1</h4>
+        <h4>ITEM 2</h4>
+        <h4>ITEM 3</h4>
+    </div>
+    
+    <div class="container">
+        <div class="sidebar">
+            <h3>RESULT</h3>
+            <p id="resultId">0</p>
+            <ul id="historyList"></ul>
+            <div id="summary"></div>
+            <p id="totalMessage"></p>
+        </div>
+        
+        <div class="main-content">
+            <h3>CONTROL CENTER</h3>
+            <div class="button-group">
+                <button id="btnMinus2">-2</button>
+                <button id="btnMinus1">-1</button>
+                <button id="btnReset">Reset</button>
+                <button id="btnPlus1">+1</button>
+                <button id="btnPlus2">+2</button>
+                <button id="btnClear" style="background-color: #ff9999;">Clear History</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let total = 0;
+        let history = [];
+        let operationCount = { additions: 0, subtractions: 0 };
+
+        function updateHistory() {
+            let historyContent = "";
+            for (let i = 0; i < history.length; i++) {
+                historyContent += "<li onclick='removeHistoryItem(" + i + ")'>" + history[i] + "</li>";
+            }
+            document.querySelector("#historyList").innerHTML = historyContent;
+        }
+
+        function removeHistoryItem(index) {
+            history.splice(index, 1);
+            updateHistory();
+        }
+
+        function updateSummary() {
+            document.querySelector("#summary").innerHTML = `Total additions: ${operationCount.additions} <br> Total subtractions: ${operationCount.subtractions}`;
+        }
+
+        function checkTotal() {
+            if (total > 0) {
+                document.querySelector("#totalMessage").innerHTML = "The total is positive.";
+            } else if (total < 0) {
+                document.querySelector("#totalMessage").innerHTML = "The total is negative.";
+            } else {
+                document.querySelector("#totalMessage").innerHTML = "The total is zero.";
+            }
+        }
+
+        function updateResults() {
+            document.querySelector("#resultId").innerHTML = total;
+            updateHistory();
+            updateSummary();
+            checkTotal();
+        }
+
+        function ClearAll() {
+            total = 0;
+            history = [];
+            operationCount.additions = 0;
+            operationCount.subtractions = 0;
+            updateResults();
+        }
+
+        document.getElementById("btnMinus2").addEventListener("click", function() {
+            total = total - 2;
+            history.push("-2");
+            operationCount.subtractions = operationCount.subtractions + 1;
+            updateResults();
+        });
+
+        document.getElementById("btnMinus1").addEventListener("click", function() {
+            total = total - 1;
+            history.push("-1");
+            operationCount.subtractions = operationCount.subtractions + 1;
+            updateResults();
+        });
+
+        document.getElementById("btnReset").addEventListener("click", function() {
+            total = 0;
+            history.push("Reset");
+            updateResults();
+        });
+
+        document.getElementById("btnPlus1").addEventListener("click", function() {
+            total = total + 1;
+            history.push("+1");
+            operationCount.additions = operationCount.additions + 1;
+            updateResults();
+        });
+
+        document.getElementById("btnPlus2").addEventListener("click", function() {
+            total = total + 2;
+            history.push("+2");
+            operationCount.additions = operationCount.additions + 1;
+            updateResults();
+        });
+
+        document.getElementById("btnClear").addEventListener("click", function() {
+            ClearAll();
+        });
+
+        // Initialize display
+        updateResults();
+    </script>
+</body>
+</html>
