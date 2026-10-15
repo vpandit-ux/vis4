@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Looper Amp - Midterm: Looping</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#000; color:#fff; font-family:Arial, Helvetica, sans-serif; display:flex; justify-content:center; padding:24px 16px; overflow-x:auto; }
+  main { width:100%; max-width:1000px; min-width:700px; }
+
+  /* Screen: 8 in x 3 in = 8:3. Everything inside scales with the screen width (cqw). */
+  #screen { aspect-ratio:8/3; container-type:inline-size; display:flex; padding:12px; background:#000; border:3px solid #3a3a3c; border-radius:14px; overflow:hidden; }
+  .panel { flex:1; min-height:0; position:relative; background:#000; padding:1.2cqw; display:flex; align-items:center; justify-content:center; }
+  svg { display:block; fill:currentColor; }
+  button { border:none; cursor:pointer; color:#fff; }
+  button:disabled { opacity:.35; cursor:not-allowed; }
+  button:focus-visible { outline:3px solid #fff; outline-offset:3px; }
+
+  /* The loop ring */
+  #ringWrap { position:relative; height:100%; aspect-ratio:1/1; }
+  #ring { width:100%; height:100%; }
+  #ring circle { fill:none; }
+  #play { position:absolute; left:50%; top:50%; width:34%; height:34%; transform:translate(-50%,-50%); border-radius:50%; display:grid; place-items:center; background:#2c2c2e; color:#fff; }
+  #play:hover:not(:disabled) { background:#3a3a3c; }
+  #play svg { width:44%; }
+  @keyframes soft { 0%, 100% { opacity:.85; } 50% { opacity:.22; } }
+  #ring circle.blink { animation:soft 1.4s ease-in-out infinite; }       /* recording: faint green, gently pulsing */
+  @media (prefers-reduced-motion: reduce) { #ring circle.blink { animation:none; opacity:.4 !important; } }
+
+  /* Record (Apple style: red dot inside a thin white ring) and Loop, bottom-left */
+  #rec, #loop { position:absolute; left:2cqw; bottom:2cqw; width:6cqw; height:6cqw; border-radius:50%; padding:0; display:grid; place-items:center; background:none; }
+  #rec svg { width:100%; height:100%; fill:none; }
+  #rec.armed { animation:soft 1.4s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { #rec.armed { animation:none; } }
+  #rec:hover:not(:disabled) { transform:scale(1.06); }
+  #loop { left:9.5cqw; background:#2c2c2e; color:#8e8e93; }
+  #loop svg { width:50%; }
+  #loop:hover:not(:disabled) { background:#3a3a3c; }
+  #loop.on, #loop.on:hover:not(:disabled) { background:#0a84ff; color:#fff; }
+  /* Delete latest layer, bottom-right — matches the round Loop control. */
+  #delete { position:absolute; right:2cqw; bottom:2cqw; width:6cqw; height:6cqw; border-radius:50%; padding:0; display:grid; place-items:center; background:transparent; color:#fff; }
+  #delete svg { width:100%; height:100%; fill:none; stroke:currentColor; stroke-linecap:square; stroke-linejoin:round; }
+  #delete:hover:not(:disabled) { transform:scale(1.06); }
+
+
+  /* Ready-made tune library for non-guitarist testing. */
+  #library { margin-top:24px; background:#141416; border:1px solid #36363a; border-radius:18px; padding:22px; color:#fff; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  .part-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .part {
+    min-height:126px; border-radius:16px; padding:12px 10px 14px; background:#242428; border:1px solid #39393e;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:#eaeaf0; position:relative; text-align:center;
+  }
+  .part[data-part="guitar"] { --tint:#30d158; }
+  .part[data-part="drums"] { --tint:#0a84ff; }
+  .part[data-part="bass"] { --tint:#ff9f0a; }
+  .part.selected { border-color:var(--tint); box-shadow:inset 0 0 0 1px var(--tint); }
+  .part svg { width:56px; height:56px; fill:none; stroke:var(--tint); stroke-width:2.8; stroke-linecap:round; stroke-linejoin:round; }
+  .guitar-reference-icon { width:60px; height:60px; object-fit:contain; filter:drop-shadow(0 0 0 transparent); }
+  .part-label { font-size:14px; font-weight:700; letter-spacing:.01em; color:#ffffff; }
+  @media(max-width:640px) { #library { padding:18px; } }
+
+  /* iPad / touchscreen: occupy the full viewport in landscape without scrolling. */
+  @media (hover:none) and (pointer:coarse) and (orientation:landscape) and (min-width:700px) {
+    html, body { width:100%; height:100%; overflow:hidden; }
+    body {
+      padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+               max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+      align-items:stretch;
+    }
+    main {
+      width:100%; max-width:none; min-width:0;
+      height:100%; height:100dvh;
+      /* Safe-area padding is on body, so subtract it from the main's full height. */
+      height:calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
+      display:grid;
+      grid-template-rows:minmax(0, 1fr) minmax(130px, 27%);
+      gap:12px;
+    }
+    #screen { width:100%; height:100%; min-height:0; aspect-ratio:auto; padding:7px; border-radius:13px; }
+    .panel { padding:8px; }
+    #ringWrap { height:min(100%, 65vw); max-width:100%; }
+    #rec, #loop, #delete {
+      width:clamp(48px, 6.7vw, 76px); height:clamp(48px, 6.7vw, 76px);
+      bottom:clamp(10px, 1.8vw, 24px);
+      touch-action:manipulation;
+    }
+    #rec { left:clamp(10px, 1.8vw, 24px); }
+    #loop { left:calc(clamp(10px, 1.8vw, 24px) + clamp(48px, 6.7vw, 76px) + 12px); }
+    #delete { right:clamp(10px, 1.8vw, 24px); }
+    #library { margin:0; min-height:0; padding:10px 14px; border-radius:13px; display:flex; align-items:stretch; }
+    .part-grid { flex:1; width:100%; height:100%; gap:12px; }
+    .part { min-height:0; height:100%; gap:6px; padding:8px; touch-action:manipulation; }
+    .part svg { width:clamp(42px, 6vw, 68px); height:clamp(42px, 6vw, 68px); }
+    .guitar-reference-icon { width:clamp(44px, 6.3vw, 70px); height:clamp(44px, 6.3vw, 70px); }
+    .part-label { font-size:clamp(13px, 1.6vw, 18px); }
+  }
+  /* Smaller/portrait iPads: fit the width and stack sections without horizontal scrolling. */
+  @media (hover:none) and (pointer:coarse) and (orientation:portrait) {
+    body { padding:12px; overflow-x:hidden; }
+    main { min-width:0; max-width:none; width:100%; }
+    #screen { width:100%; aspect-ratio:8/4.7; }
+    #rec, #loop, #delete { width:clamp(40px, 7vw, 60px); height:clamp(40px, 7vw, 60px); bottom:12px; }
+    #rec { left:12px; }
+    #loop { left:calc(12px + clamp(40px, 7vw, 60px) + 8px); }
+    #delete { right:12px; }
+    #library { margin-top:12px; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div id="screen">
+  <section class="panel">
+    <div id="ringWrap">
+      <svg id="ring" viewBox="0 0 200 200" aria-hidden="true">
+        <defs>
+          <!-- Soft tonal gradients: same hues, with gentle light-to-dark transitions. -->
+          <linearGradient id="greenGradient" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#83eeb1"/>
+            <stop offset="42%" stop-color="#44d98a"/>
+            <stop offset="100%" stop-color="#24a979"/>
+          </linearGradient>
+          <linearGradient id="blueGradient" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#8bc7ff"/>
+            <stop offset="45%" stop-color="#4b9ef5"/>
+            <stop offset="100%" stop-color="#4d72d2"/>
+          </linearGradient>
+          <linearGradient id="orangeGradient" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#ffe4a4"/>
+            <stop offset="45%" stop-color="#ffc16a"/>
+            <stop offset="100%" stop-color="#e88a51"/>
+          </linearGradient>
+        </defs>
+        <circle cx="100" cy="100" r="88" stroke="#2a2a2c" stroke-width="12"/>
+        <circle cx="100" cy="100" r="72" stroke="#2a2a2c" stroke-width="12"/>
+        <circle cx="100" cy="100" r="56" stroke="#2a2a2c" stroke-width="12"/>
+        <circle id="f0" cx="100" cy="100" r="88" stroke="#30d158" stroke-width="12" stroke-dasharray="0 553"/>
+        <circle id="f1" cx="100" cy="100" r="72" stroke="url(#blueGradient)" stroke-width="12" stroke-dasharray="0 453"/>
+        <circle id="f2" cx="100" cy="100" r="56" stroke="url(#orangeGradient)" stroke-width="12" stroke-dasharray="0 352"/>
+        <!-- Playback progress: bright arc over each translucent recorded ring. -->
+        <circle id="p0" cx="100" cy="100" r="88" stroke="#30d158" stroke-width="12" stroke-dasharray="0 553" transform="rotate(-90 100 100)" pointer-events="none"/>
+        <circle id="p1" cx="100" cy="100" r="72" stroke="url(#blueGradient)" stroke-width="12" stroke-dasharray="0 453" transform="rotate(-90 100 100)" pointer-events="none"/>
+        <circle id="p2" cx="100" cy="100" r="56" stroke="url(#orangeGradient)" stroke-width="12" stroke-dasharray="0 352" transform="rotate(-90 100 100)" pointer-events="none"/>
+        <line id="hand" x1="100" y1="4" x2="100" y2="52" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
+      </svg>
+      <button id="play" aria-label="Play" disabled>
+        <svg id="icPlay" viewBox="0 0 48 48"><polygon points="12,6 42,24 12,42"/></svg>
+        <svg id="icPause" viewBox="0 0 48 48" style="display:none"><rect x="9" y="6" width="11" height="36" rx="2"/><rect x="28" y="6" width="11" height="36" rx="2"/></svg>
+      </button>
+    </div>
+    <button id="rec" aria-label="Record">
+      <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" stroke="#fff" stroke-width="4"/><circle id="icRec" cx="24" cy="24" r="16" fill="#ffffff"/><rect id="icStop" x="15" y="15" width="18" height="18" rx="4" fill="#e54d3f" style="display:none"/></svg>
+    </button>
+    <button id="loop" class="on" aria-pressed="true" aria-label="Loop" disabled>
+      <svg viewBox="0 0 48 48"><path d="M38 24A14 14 0 1 1 29 11" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><polygon points="22,2 38,11 24,19"/></svg>
+    </button>
+    <button id="delete" aria-label="Delete last layer" title="Delete last layer" disabled>
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="21" stroke-width="4"/>
+        <path d="M16 16L32 32M32 16L16 32" stroke-width="5"/>
+      </svg>
+    </button>
+  </section>
+</div>
+
+<section id="library" aria-label="Premade tune library">
+  <div class="part-grid" role="group" aria-label="Select instrument to record">
+    <button class="part selected" data-part="guitar" aria-pressed="true" aria-label="Guitar" title="Guitar">
+      <img class="guitar-reference-icon" src="data:image/png;base64,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" alt="" aria-hidden="true">
+      <span class="part-label">Guitar</span>
+    </button>
+    <button class="part" data-part="drums" aria-pressed="false" aria-label="Drums" title="Drums">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <ellipse cx="22.5" cy="16.5" rx="13" ry="5.5"/>
+        <path d="M9.5 16.5V33.5C9.5 37.6 15.3 40.5 22.5 40.5C29.7 40.5 35.5 37.6 35.5 33.5V16.5"/>
+        <path d="M15 21V38.2"/>
+        <path d="M23 21V40"/>
+        <path d="M31 21V38.2"/>
+        <path d="M25 15L35.8 6.2"/>
+        <path d="M28.2 20.6L41 17.8"/>
+      </svg>
+      <span class="part-label">Drums</span>
+    </button>
+    <button class="part" data-part="bass" aria-pressed="false" aria-label="Keyboard" title="Keyboard">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="7" y="7" width="34" height="34" rx="3.2"/>
+        <path d="M13 7V41"/>
+        <path d="M21 7V26"/>
+        <path d="M27 7V26"/>
+        <path d="M35 7V41"/>
+      </svg>
+      <span class="part-label">Keyboard</span>
+    </button>
+  </div>
+  <span id="libraryStatus" class="sr-only" role="status" aria-live="polite">Guitar selected. Press Record above to add it.</span>
+</section>
+</main>
+
+<script>
+// This single HTML file includes synthesized guitar, drums and keyboard audio, without external resources.
+// The three preset parts are all exactly 4 seconds long and repeat in sync.
+const $ = id => document.getElementById(id);
+const MAX_LAYERS = 3, CIRC = [553,453,352], LOOP_SECS = 4;
+const state = { mode:'idle', playing:false, loopOn:true, layers:[], loopSecs:0, position:0, layerTime:0, chosenStyle:'indie', chosenPart:'guitar', currentRecording:null };
+let audio = null, lastTick=performance.now(), previewUntil=0;
+const parts=['guitar','drums','bass'];
+const banks={
+ indie:{chords:[[60,64,67],[57,60,64],[53,57,60],[55,59,62]], bass:[36,33,29,31], lead:[72,76,74,69,72,76,79,74]},
+ rock:{chords:[[52,59,64],[48,55,60],[55,62,67],[50,57,62]], bass:[40,36,43,38], lead:[76,74,72,79,76,74,71,74]},
+ chill:{chords:[[60,64,67,71],[55,59,62,67],[57,60,64,69],[53,57,60,64]], bass:[36,31,33,29], lead:[72,71,67,69,72,76,74,67]}
+};
+function ensureAudio(){
+  if(!audio) audio=new (window.AudioContext||window.webkitAudioContext)();
+  if(audio.state==='suspended') audio.resume();
+  return audio;
+}
+// Lightweight offline instrument synthesis.  Guitar uses a plucked-string model;
+// keyboard uses decaying piano-like partials; drums use separate noise/tone envelopes.
+function midiHz(m){return 440*Math.pow(2,(m-69)/12);}
+function pluck(midi,when,length=.9,volume=.12){
+  const ctx=ensureAudio(), sr=ctx.sampleRate, hz=midiHz(midi), delay=Math.max(2,Math.round(sr/hz));
+  const duration=Math.min(2.2,length+.5), count=Math.ceil(sr*duration);
+  const buffer=ctx.createBuffer(1,count,sr), samples=buffer.getChannelData(0);
+  const comb=new Float32Array(delay);
+  for(let i=0;i<delay;i++) comb[i]=(Math.random()*2-1)*.72;
+  let idx=0,previous=0;
+  for(let i=0;i<count;i++){
+    const current=comb[idx];
+    comb[idx]=.996*(current+previous)*.5;
+    previous=current;
+    idx=(idx+1)%delay;
+    const attack=Math.min(1,i/(sr*.005));
+    const release=Math.min(1,Math.max(0,(count-i)/(sr*.12)));
+    samples[i]=current*attack*release;
+  }
+  const source=ctx.createBufferSource(), filter=ctx.createBiquadFilter(), gain=ctx.createGain();
+  source.buffer=buffer;filter.type='lowpass';filter.frequency.value=3500;
+  gain.gain.value=volume;
+  source.connect(filter);filter.connect(gain);gain.connect(ctx.destination);
+  source.start(when);
+}
+function piano(midi,when,length=.55,volume=.09){
+  const ctx=ensureAudio(), base=midiHz(midi), master=ctx.createGain();
+  master.gain.value=volume;master.connect(ctx.destination);
+  [1,2,3,4].forEach((partial,i)=>{
+    const osc=ctx.createOscillator(),amp=ctx.createGain();
+    osc.type='sine';osc.frequency.setValueAtTime(base*partial*(1+i*.0004),when);
+    const peak=[.8,.23,.10,.045][i];
+    amp.gain.setValueAtTime(.0001,when);
+    amp.gain.exponentialRampToValueAtTime(peak,when+.008+i*.002);
+    amp.gain.exponentialRampToValueAtTime(.0001,when+Math.max(.18,length*(i===0?1.8:1.05-i*.12)));
+    osc.connect(amp);amp.connect(master);osc.start(when);osc.stop(when+Math.max(.3,length*1.9)+.03);
+  });
+}
+function noiseHit(when,kind,volume){
+  const ctx=ensureAudio(),n=Math.ceil(ctx.sampleRate*(kind==='hat'?.085:.22));
+  const buffer=ctx.createBuffer(1,n,ctx.sampleRate),v=buffer.getChannelData(0);
+  for(let i=0;i<n;i++)v[i]=Math.random()*2-1;
+  const source=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain();
+  source.buffer=buffer;filter.type=kind==='hat'?'highpass':'bandpass';
+  filter.frequency.value=kind==='hat'?7600:1750;
+  gain.gain.setValueAtTime(volume,when);
+  gain.gain.exponentialRampToValueAtTime(.0001,when+n/ctx.sampleRate);
+  source.connect(filter);filter.connect(gain);gain.connect(ctx.destination);source.start(when);
+}
+function percussion(kind,when,vol=.1){
+ const ctx=ensureAudio();
+ if(kind==='kick'){
+  const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';
+  osc.frequency.setValueAtTime(155,when);osc.frequency.exponentialRampToValueAtTime(48,when+.14);
+  gain.gain.setValueAtTime(Math.min(.5,vol*1.8),when);gain.gain.exponentialRampToValueAtTime(.0001,when+.23);
+  osc.connect(gain);gain.connect(ctx.destination);osc.start(when);osc.stop(when+.24);
+ } else if(kind==='snare'){
+  noiseHit(when,'snare',vol);
+  const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='triangle';osc.frequency.value=175;
+  gain.gain.setValueAtTime(vol*.5,when);gain.gain.exponentialRampToValueAtTime(.0001,when+.12);
+  osc.connect(gain);gain.connect(ctx.destination);osc.start(when);osc.stop(when+.14);
+ } else noiseHit(when,'hat',vol*.65);
+}
+// Each preset is a four-second, 16-step phrase. Keyboard is a dedicated piano-like part,
+// not the old bass oscillator hidden behind a keyboard label.
+function soundStep(part,style,step,when){
+  const bank=banks[style];
+  if(part==='guitar'){
+    if(step%4===0){
+      const chord=bank.chords[Math.floor(step/4)];
+      chord.forEach((m,i)=>pluck(m-12,when+i*.026,.85,.095));
+    }
+    if(step%4===2)pluck(bank.lead[step%8]-12,when,.38,.06);
+  } else if(part==='bass'){
+    if(step%4===0){
+      const chord=bank.chords[Math.floor(step/4)];
+      chord.forEach((m,i)=>piano(m,when+i*.018,.75,.065));
+    }
+    if(step%2===1)piano(bank.lead[step%8],when,.3,.04);
+  } else if(part==='drums'){
+    if(step%4===0)percussion('kick',when,.16);
+    if(step%8===4)percussion('snare',when,.16);
+    if(step%2===0)percussion('hat',when,.12);
+    if(style==='rock'&&step%8===6)percussion('kick',when,.10);
+  }
+}
+// Playback and recording use a shared time position to preserve ring animation.
+function playCrossed(oldPos,newPos,partsToPlay){
+  if(!partsToPlay.length)return;
+  const ctx=ensureAudio();
+  const startStep=Math.floor(oldPos/.25)+1, endStep=Math.floor(newPos/.25);
+  for(let step=startStep;step<=endStep;step++){
+    const when=ctx.currentTime+.005;
+    for(const x of partsToPlay)soundStep(x.part,x.style,step%16,when);
+  }
+}
+function beginRecording(){
+  ensureAudio();
+  if(state.layers.length>=MAX_LAYERS)return;
+  const selected={part:state.chosenPart,style:state.chosenStyle,fill:0,start:0};
+  state.layers.push(selected);state.currentRecording=selected;state.layerTime=0;
+  if(state.mode==='idle'){state.mode='recording';state.position=0;state.loopSecs=LOOP_SECS;state.playing=true;}
+  else {state.mode='overdubbing';state.playing=true;}
+  soundStep(selected.part,selected.style,0,ensureAudio().currentTime+.015);
+  $('libraryStatus').textContent='Recording '+selected.part+'… wait four seconds or press Record to finish.';
+}
+function finishRecording(){
+  if(!state.currentRecording)return;
+  state.currentRecording.fill=1;state.currentRecording.start=0;
+  state.currentRecording=null;state.layerTime=0;state.mode='loop';state.playing=false;state.position=0;
+  $('libraryStatus').textContent=state.layers.length+' layer'+(state.layers.length===1?'':'s')+' saved. Press Play to hear your track, or select another instrument and Record.';
+}
+function fakeDevice(type){
+  const s=state;
+  if(type==='record'){
+    if(s.mode==='recording'||s.mode==='overdubbing')finishRecording();
+    else beginRecording();
+  }
+  if(type==='delete'&&s.layers.length){
+    s.layers.pop();s.currentRecording=null;s.layerTime=0;
+    if(!s.layers.length){s.mode='idle';s.playing=false;s.position=0;s.loopSecs=0;}
+    else {s.mode='loop';s.playing=false;s.position=0;}
+    $('libraryStatus').textContent=s.layers.length?'Last layer removed. '+s.layers.length+' remain.':'All layers cleared. Select a part and press Record.';
+  }
+  if(type==='loop')s.loopOn=!s.loopOn;
+  if(type==='play' && s.mode==='loop') {ensureAudio();s.playing=!s.playing;if(s.playing&&s.position>=LOOP_SECS)s.position=0;if(s.playing&&s.position===0)s.layers.forEach(x=>soundStep(x.part,x.style,0,audio.currentTime+.015));}
+  render();
+}
+function tick(){
+  const now=performance.now(),dt=Math.min(.12,(now-lastTick)/1000);lastTick=now;
+  const s=state;
+  if(s.playing){
+    let remaining=dt;
+    while(remaining>0 && s.playing){
+      const segment=Math.min(remaining,LOOP_SECS-s.position);
+      const old=s.position, to=s.position+segment;
+      // The recording currently in progress also plays its premade notes.
+      playCrossed(old,to,s.layers);
+      s.position=to;
+      if(s.currentRecording){s.layerTime+=segment;s.currentRecording.fill=Math.min(1,s.layerTime/LOOP_SECS);}
+      remaining-=segment;
+      if(s.currentRecording && s.layerTime>=LOOP_SECS-.001){finishRecording();break;}
+      if(s.position>=LOOP_SECS-.00001){
+        if(s.loopOn)s.position=0;
+        else {s.playing=false;s.position=0;break;}
+      }
+      if(segment<=0)break;
+    }
+  }
+  render();
+}
+function render(){
+  const s=state,busy=s.mode==='recording'||s.mode==='overdubbing';
+  $('play').disabled=s.mode==='idle'||busy;
+  $('icPlay').style.display=s.playing&&!busy?'none':'block';
+  $('icPause').style.display=s.playing&&!busy?'block':'none';
+  $('play').setAttribute('aria-label',s.playing?'Pause':'Play');
+  $('rec').disabled=!busy&&s.layers.length>=MAX_LAYERS;
+  $('icRec').style.display=busy?'none':'block';
+  $('icStop').style.display=busy?'block':'none';
+  $('rec').setAttribute('aria-label',busy?'Stop recording':'Record selected part');
+  $('loop').disabled=s.mode==='idle'||busy;
+  $('loop').classList.toggle('on',s.loopOn);
+  $('loop').setAttribute('aria-pressed',s.loopOn);
+  $('delete').disabled=s.layers.length===0;
+  for(let i=0;i<MAX_LAYERS;i++){
+    const f=$('f'+i),p=$('p'+i),layer=s.layers[i];
+    f.style.opacity=layer?(layer===s.currentRecording?1:.6):0;
+    f.setAttribute('stroke-dasharray',layer?'none':`0 ${CIRC[i]}`);
+    f.setAttribute('transform','rotate(-90 100 100)');
+    f.classList.toggle('blink',layer===s.currentRecording);
+    const frac=s.loopSecs?Math.max(0,Math.min(1,s.position/s.loopSecs)):0;
+    p.style.opacity=layer&&layer!==s.currentRecording&&frac>0?1:0;
+    p.setAttribute('stroke-dasharray',`${CIRC[i]*frac} ${CIRC[i]}`);
+  }
+  $('hand').style.opacity=(s.mode==='idle'||busy)?0:1;
+  $('hand').setAttribute('transform',`rotate(${s.loopSecs?s.position/s.loopSecs*360:0} 100 100)`);
+}
+$('rec').onclick=()=>fakeDevice('record');
+$('play').onclick=()=>fakeDevice('play');
+$('loop').onclick=()=>fakeDevice('loop');
+$('delete').onclick=()=>fakeDevice('delete');
+function updateSelection(){
+  document.querySelectorAll('[data-part]').forEach(b=>{const on=b.dataset.part===state.chosenPart;b.classList.toggle('selected',on);b.setAttribute('aria-pressed',on);});
+  $('libraryStatus').textContent=state.chosenPart.charAt(0).toUpperCase()+state.chosenPart.slice(1)+' selected. Press Record above to add it.';
+}
+document.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{state.chosenPart=b.dataset.part;updateSelection();});
+setInterval(tick,40);
+render();
+</script>
+</body>
+</html>

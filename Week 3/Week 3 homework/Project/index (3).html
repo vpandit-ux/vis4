@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looper Amp - Week 3: Clickable Interface</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#e6e6e6; color:#222; font-family:Arial, Helvetica, sans-serif; display:flex; justify-content:center; padding:24px 16px; overflow-x:auto; }
+  main { width:100%; max-width:1000px; min-width:700px; }
+
+  /* Screen: 8 in x 3 in = 8:3. Everything inside scales with the screen width (cqw). */
+  #screen { aspect-ratio:8/3; container-type:inline-size; display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:12px; padding:12px; background:#e0e0e0; border:3px solid #666; overflow:hidden; }
+  #screen > * { min-height:0; font-size:clamp(9px,1.2cqw,13px); }
+  .panel { background:#d2d2d2; border:2px solid #888; padding:1.2cqw; display:flex; flex-direction:column; align-items:center; gap:1cqw; }
+  svg { display:block; fill:currentColor; }
+  button { font:inherit; color:#222; background:#bdbdbd; border:2px solid #666; cursor:pointer; }
+  button:hover:not(:disabled) { background:#aaa; }
+  button.on, button.on:hover { background:#555; color:#fff; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button:focus-visible, .dial:focus-visible { outline:3px solid #000; outline-offset:2px; }
+
+  /* Left: sound library */
+  #lib { justify-content:flex-start; }
+  #tiles { display:grid; grid-template-columns:1fr 1fr; gap:1cqw; width:100%; }
+  .tile { aspect-ratio:4/3; border-radius:1.8cqw; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.4cqw; padding:0; }
+  .tile svg { width:34%; }
+  #open { width:100%; display:flex; align-items:center; justify-content:center; gap:1cqw; padding:.7cqw; border-style:dashed; border-radius:1.8cqw; }
+  #open svg { width:2.4cqw; }
+  #lib.over { background:#c4c4c4; }
+  #info { color:#444; text-align:center; }
+
+  /* Middle: loop ring */
+  #center { justify-content:center; }
+  #ringWrap { position:relative; flex:1; min-height:0; aspect-ratio:1/1; }
+  #ring { width:100%; height:100%; }
+  #ring circle { fill:none; }
+  #pulse { fill:#c4c4c4 !important; }
+  #play { position:absolute; left:50%; top:50%; width:36%; height:36%; transform:translate(-50%,-50%); border-radius:50%; display:grid; place-items:center; background:#999; }
+  #play svg { width:44%; }
+  .round { width:4.6cqw; height:4.6cqw; border-radius:50%; padding:0; display:grid; place-items:center; }
+  .round svg { width:55%; }
+  #controls { display:flex; gap:3cqw; }
+
+  /* Right: knobs */
+  #knobs { justify-content:space-around; }
+  #dials { display:flex; gap:1.5cqw; width:100%; }
+  .dialbox { flex:1; text-align:center; }
+  .dial { touch-action:none; cursor:ns-resize; border-radius:50%; }
+  .dial svg { width:100%; aspect-ratio:1; }
+  .cap { margin-top:.3cqw; font-weight:bold; letter-spacing:1px; color:#444; }
+  #fxbox { text-align:center; }
+  #fx { width:5.4cqw; height:5.4cqw; border-radius:50%; padding:0; display:grid; place-items:center; margin:0 auto .4cqw; }
+  #fx svg { width:55%; }
+</style>
+</head>
+<body>
+<main>
+<div id="screen">
+
+  <!-- Left: pick a sound -->
+  <section id="lib" class="panel">
+    <div id="tiles">
+      <button class="tile" data-k="chords" aria-label="Chord progression"><svg viewBox="0 0 48 48"><rect x="9" y="12" width="7" height="26" rx="3"/><rect x="20" y="7" width="7" height="34" rx="3"/><rect x="31" y="15" width="7" height="22" rx="3"/></svg>Chords</button>
+      <button class="tile" data-k="riff" aria-label="Single-note riff"><svg viewBox="0 0 48 48"><polyline points="5,36 15,14 26,30 36,10 44,26" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>Riff</button>
+      <button class="tile" data-k="arpeggio" aria-label="Fingerpicked arpeggio"><svg viewBox="0 0 48 48"><circle cx="7" cy="38" r="4.5"/><circle cx="16" cy="30" r="4.5"/><circle cx="25" cy="22" r="4.5"/><circle cx="34" cy="14" r="4.5"/><circle cx="42" cy="7" r="4.5"/></svg>Arpeggio</button>
+      <button class="tile" data-k="power" aria-label="Power chords, heavy"><svg viewBox="0 0 48 48"><polygon points="28,3 10,27 22,27 18,45 38,19 26,19"/></svg>Heavy</button>
+    </div>
+    <button id="open" aria-label="Open your own audio file"><svg viewBox="0 0 48 48"><rect x="20" y="6" width="8" height="36" rx="3"/><rect x="6" y="20" width="36" height="8" rx="3"/></svg>Your clip</button>
+    <input type="file" id="file" accept="audio/*" hidden>
+    <div id="info">Pick a sound to start</div>
+  </section>
+
+  <!-- Middle: loop ring -->
+  <section id="center" class="panel">
+    <div id="ringWrap">
+      <svg id="ring" viewBox="0 0 200 200" aria-hidden="true">
+        <circle id="pulse" cx="100" cy="100" r="56"/>
+        <circle cx="100" cy="100" r="85" stroke="#bdbdbd" stroke-width="14"/>
+        <circle id="prog" cx="100" cy="100" r="85" stroke="#555" stroke-width="14" stroke-linecap="round" stroke-dasharray="0 534" transform="rotate(-90 100 100)"/>
+        <circle id="head" cx="100" cy="15" r="11" style="fill:#222"/>
+      </svg>
+      <button id="play" aria-label="Play" disabled>
+        <svg id="iconPlay" viewBox="0 0 48 48"><polygon points="12,6 42,24 12,42"/></svg>
+        <svg id="iconPause" viewBox="0 0 48 48" style="display:none"><rect x="9" y="6" width="11" height="36" rx="2"/><rect x="28" y="6" width="11" height="36" rx="2"/></svg>
+      </button>
+    </div>
+    <div id="controls">
+      <button id="stop" class="round" aria-label="Stop" disabled><svg viewBox="0 0 48 48"><rect x="8" y="8" width="32" height="32" rx="3"/></svg></button>
+      <button id="loop" class="round on" aria-pressed="true" aria-label="Loop" disabled><svg viewBox="0 0 48 48"><path d="M38 24A14 14 0 1 1 29 11" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><polygon points="22,2 38,11 24,19"/></svg></button>
+    </div>
+  </section>
+
+  <!-- Right: knobs (drag up or down; they stand in for the real knobs) -->
+  <section id="knobs" class="panel">
+    <div id="dials">
+      <div class="dialbox">
+        <div class="dial" id="gain" role="slider" tabindex="0" aria-label="Gain" aria-valuemin="0" aria-valuemax="100">
+          <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="none" stroke="#bdbdbd" stroke-width="9" stroke-dasharray="188.5 300" transform="rotate(135 50 50)" stroke-linecap="round"/><circle class="val" cx="50" cy="50" r="40" fill="none" stroke="#444" stroke-width="9" stroke-dasharray="0 300" transform="rotate(135 50 50)" stroke-linecap="round"/><circle cx="50" cy="50" r="27" fill="#999" stroke="#666" stroke-width="3"/><g class="ptr"><line x1="50" y1="50" x2="50" y2="30" stroke="#222" stroke-width="5" stroke-linecap="round"/></g></svg>
+        </div>
+        <div class="cap">GAIN <span id="gainOut"></span></div>
+      </div>
+      <div class="dialbox">
+        <div class="dial" id="tone" role="slider" tabindex="0" aria-label="Tone" aria-valuemin="0" aria-valuemax="100">
+          <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="none" stroke="#bdbdbd" stroke-width="9" stroke-dasharray="188.5 300" transform="rotate(135 50 50)" stroke-linecap="round"/><circle class="val" cx="50" cy="50" r="40" fill="none" stroke="#444" stroke-width="9" stroke-dasharray="0 300" transform="rotate(135 50 50)" stroke-linecap="round"/><circle cx="50" cy="50" r="27" fill="#999" stroke="#666" stroke-width="3"/><g class="ptr"><line x1="50" y1="50" x2="50" y2="30" stroke="#222" stroke-width="5" stroke-linecap="round"/></g></svg>
+        </div>
+        <div class="cap">TONE <span id="toneOut"></span></div>
+      </div>
+    </div>
+    <div id="fxbox">
+      <button id="fx" class="on" aria-pressed="true" aria-label="Effects on or off"><svg viewBox="0 0 48 48"><path d="M15 11A17 17 0 1 0 33 11" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><rect x="21.5" y="3" width="5" height="22" rx="2.5"/></svg></button>
+      <div class="cap">EFFECTS</div>
+    </div>
+  </section>
+
+</div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const GAUGE = 188.5;                               // length of the 270-degree dial arc
+const knobState = { gain: 30, tone: 50 };          // knob positions, 0-100
+
+// ===== Audio chain: source -> input -> [pre -> shaper -> post -> lowShelf -> highShelf] -> output =====
+let ctx = null, input, output, preGain, shaper, postGain, lowShelf, highShelf, analyser, meter;
+let buffer = null, source = null, playing = false, loopOn = true, fxOn = true;
+let startedAt = 0, offset = 0, current = "", trackName = "", notice = "", noticeUntil = 0;
+
+function initAudio() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  input = ctx.createGain(); output = ctx.createGain();
+  preGain = ctx.createGain(); postGain = ctx.createGain();
+  shaper = ctx.createWaveShaper(); shaper.curve = makeCurve(); shaper.oversample = "4x";
+  lowShelf = ctx.createBiquadFilter(); lowShelf.type = "lowshelf"; lowShelf.frequency.value = 700;
+  highShelf = ctx.createBiquadFilter(); highShelf.type = "highshelf"; highShelf.frequency.value = 700;
+  analyser = ctx.createAnalyser(); analyser.fftSize = 256; meter = new Uint8Array(analyser.fftSize);
+  preGain.connect(shaper); shaper.connect(postGain); postGain.connect(lowShelf);
+  lowShelf.connect(highShelf); highShelf.connect(output);
+  output.connect(ctx.destination); output.connect(analyser);
+  route(); setGain(knobState.gain); setTone(knobState.tone);
+}
+function makeCurve() {                             // soft-clipping tanh curve, like an overdriven amp stage
+  const n = 2048, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) c[i] = Math.tanh(((i / (n - 1)) * 2 - 1) * 2);
+  return c;
+}
+function setGain(v) {                              // 0-100 -> 0 to 36 dB of drive
+  if (!ctx) return; v = v / 100; const t = ctx.currentTime;
+  preGain.gain.setTargetAtTime(Math.pow(10, (v * 36) / 20), t, 0.02);
+  postGain.gain.setTargetAtTime(0.75 - 0.35 * v, t, 0.02);
+}
+function setTone(v) {                              // 50 = flat, +/- 12 dB tilt
+  if (!ctx) return; const tilt = ((v - 50) / 50) * 12, t = ctx.currentTime;
+  lowShelf.gain.setTargetAtTime(-tilt, t, 0.02); highShelf.gain.setTargetAtTime(tilt, t, 0.02);
+}
+function route() { input.disconnect(); input.connect(fxOn ? preGain : output); }
+
+// ===== Sound library: longer built-in tracks made from plucked-string synthesis =====
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+const CHORDS = { Am: [45, 52, 57, 60, 64], F: [41, 48, 53, 57, 60], C: [48, 52, 55, 60, 64], G: [43, 50, 55, 59, 62] };
+const PROG = ["Am", "F", "C", "G"];
+function pluck(out, sr, startSec, midi, durSec, amp) {
+  const len = Math.round(sr / mtof(midi)), ring = new Float32Array(len);
+  for (let n = 0; n < len; n++) ring[n] = Math.random() * 2 - 1;
+  const start = Math.floor(startSec * sr), end = Math.min(out.length, start + Math.floor(durSec * sr)), fade = Math.floor(0.05 * sr);
+  for (let n = start, p = 0; n < end; n++, p = (p + 1) % len) {
+    out[n] += ring[p] * amp * Math.min(1, (end - n) / fade);
+    ring[p] = (ring[p] + ring[(p + 1) % len]) * 0.4985;
+  }
+}
+const TRACKS = {
+  chords: { name: "Chord progression", secs: 22, build(o, sr) {
+    const beat = 60 / 90;
+    for (let bar = 0; bar < 8; bar++) [0, 1.5, 2, 3].forEach(b => CHORDS[PROG[Math.floor(bar / 2)]].forEach((m, k) =>
+      pluck(o, sr, (bar * 4 + b) * beat + k * 0.025, m, 1.5 * beat, 0.22)));
+  }},
+  riff: { name: "Single-note riff", secs: 16, build(o, sr) {
+    const a = [52, 55, 57, 55, 59, 57, 55, 52], b = [52, 55, 57, 59, 62, 59, 57, 55];
+    for (let i = 0; i < 64; i++) pluck(o, sr, i * 0.25, (Math.floor(i / 8) % 2 ? b : a)[i % 8], 0.4, 0.5);
+  }},
+  arpeggio: { name: "Fingerpicked arpeggio", secs: 20, build(o, sr) {
+    const idx = [0, 2, 3, 4, 3, 2, 3, 4];
+    for (let bar = 0; bar < 8; bar++) idx.forEach((k, n) => pluck(o, sr, (bar * 8 + n) * 0.3, CHORDS[PROG[Math.floor(bar / 2)]][k], 1.2, 0.35));
+  }},
+  power: { name: "Power chords", secs: 16, build(o, sr) {
+    const P = { E: [40, 47, 52], G: [43, 50, 55], A: [45, 52, 57] }, bar = "EEEGEEAG";
+    for (let i = 0; i < 58; i++) P[bar[i % 8]].forEach(m => pluck(o, sr, i * 0.2727, m, 0.3, 0.22));
+  }}
+};
+function makeTrack(key) {
+  initAudio();
+  const t = TRACKS[key], sr = ctx.sampleRate, buf = ctx.createBuffer(1, Math.floor(sr * t.secs), sr), out = buf.getChannelData(0);
+  t.build(out, sr);
+  let peak = 0; for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]));
+  for (let i = 0; i < out.length; i++) out[i] *= 0.8 / peak;
+  setBuffer(buf, t.name, key);
+}
+async function loadFile(file) {
+  initAudio();
+  try { setBuffer(await ctx.decodeAudioData(await file.arrayBuffer()), file.name, "file"); }
+  catch (e) { notice = "Could not read that file"; noticeUntil = Date.now() + 3000; }
+}
+function setBuffer(buf, name, key) { stop(); buffer = buf; trackName = name; current = key; render(); }
+
+// ===== Transport =====
+function play() {
+  if (!buffer || playing) return;
+  ctx.resume();
+  source = ctx.createBufferSource(); source.buffer = buffer; source.loop = loopOn; source.connect(input);
+  source.onended = () => { if (playing) { playing = false; offset = 0; render(); } };
+  startedAt = ctx.currentTime - offset; source.start(0, offset); playing = true; render();
+}
+function halt() { playing = false; source.onended = null; source.stop(); source.disconnect(); }
+function pause() { if (!playing) return; offset = position(); halt(); render(); }
+function stop() { if (playing) halt(); offset = 0; render(); }
+function position() {
+  if (!buffer) return 0;
+  if (!playing) return offset;
+  const t = ctx.currentTime - startedAt;
+  return loopOn ? t % buffer.duration : Math.min(t, buffer.duration);
+}
+
+// ===== fakeDevice(): everything the hardware knobs would do lives here =====
+// In Week 7 the Arduino sends the same messages, and this is the one piece you swap.
+function fakeDevice(type, value) {
+  if (type === "gain") { knobState.gain = value; setGain(value); }
+  if (type === "tone") { knobState.tone = value; setTone(value); }
+  render();
+}
+window.knobs = { gain: v => fakeDevice("gain", v), tone: v => fakeDevice("tone", v) };   // Week 7 hook
+
+// ===== render(): redraws the buttons and dials from the current state =====
+function render() {
+  for (const k of ["gain", "tone"]) {
+    const v = knobState[k], el = $(k);
+    el.setAttribute("aria-valuenow", v);
+    el.querySelector(".val").setAttribute("stroke-dasharray", `${GAUGE * v / 100} 300`);
+    el.querySelector(".ptr").setAttribute("transform", `rotate(${-135 + 2.7 * v} 50 50)`);
+    $(k + "Out").textContent = v;
+  }
+  document.querySelectorAll(".tile").forEach(t => t.classList.toggle("on", t.dataset.k === current));
+  ["play", "stop", "loop"].forEach(id => $(id).disabled = !buffer);
+  $("loop").classList.toggle("on", loopOn); $("loop").setAttribute("aria-pressed", loopOn);
+  $("fx").classList.toggle("on", fxOn); $("fx").setAttribute("aria-pressed", fxOn);
+  $("iconPlay").style.display = playing ? "none" : "block";
+  $("iconPause").style.display = playing ? "block" : "none";
+  $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
+}
+
+// ===== Moving shapes: progress ring, head dot, and a circle that swells with the sound =====
+const fmt = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+let pulse = 56;
+function frame() {
+  const dur = buffer ? buffer.duration : 1, frac = buffer ? position() / dur : 0, a = frac * 2 * Math.PI - Math.PI / 2;
+  $("prog").setAttribute("stroke-dasharray", `${534 * frac} 534`);
+  $("prog").style.opacity = frac > 0.004 ? 1 : 0;
+  $("head").setAttribute("cx", (100 + 85 * Math.cos(a)).toFixed(1)); $("head").setAttribute("cy", (100 + 85 * Math.sin(a)).toFixed(1));
+  let target = 56;
+  if (playing && analyser) {
+    analyser.getByteTimeDomainData(meter);
+    let sum = 0; for (const v of meter) { const x = (v - 128) / 128; sum += x * x; }
+    target = 56 + Math.min(1, Math.sqrt(sum / meter.length) * 3) * 16;
+  }
+  pulse += (target - pulse) * 0.25; $("pulse").setAttribute("r", pulse.toFixed(1));
+  $("info").textContent = Date.now() < noticeUntil ? notice : buffer ? `${trackName}  ${fmt(position())} / ${fmt(dur)}` : "Pick a sound to start";
+  requestAnimationFrame(frame);
+}
+
+// ===== Wiring: buttons change state, then render() redraws =====
+document.querySelectorAll(".tile").forEach(t => t.onclick = () => makeTrack(t.dataset.k));
+$("open").onclick = () => $("file").click();
+$("file").onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+$("lib").ondragover = e => { e.preventDefault(); $("lib").classList.add("over"); };
+$("lib").ondragleave = () => $("lib").classList.remove("over");
+$("lib").ondrop = e => { e.preventDefault(); $("lib").classList.remove("over"); e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]); };
+$("play").onclick = () => playing ? pause() : play();
+$("stop").onclick = stop;
+$("loop").onclick = () => { loopOn = !loopOn; if (source) source.loop = loopOn; render(); };
+$("fx").onclick = () => { initAudio(); fxOn = !fxOn; route(); render(); };
+
+const clamp = v => Math.round(Math.max(0, Math.min(100, v)));
+for (const k of ["gain", "tone"]) {                // drag up/down, scroll, or use arrow keys
+  const el = $(k); let y0 = 0, v0 = 0;
+  el.onpointerdown = e => { el.setPointerCapture(e.pointerId); y0 = e.clientY; v0 = knobState[k]; };
+  el.onpointermove = e => { if (el.hasPointerCapture(e.pointerId)) fakeDevice(k, clamp(v0 + (y0 - e.clientY) * 0.7)); };
+  el.onwheel = e => { e.preventDefault(); fakeDevice(k, clamp(knobState[k] - Math.sign(e.deltaY) * 5)); };
+  el.onkeydown = e => {
+    const d = { ArrowUp: 5, ArrowRight: 5, ArrowDown: -5, ArrowLeft: -5 }[e.key];
+    if (d) { e.preventDefault(); fakeDevice(k, clamp(knobState[k] + d)); }
+  };
+}
+
+render();
+frame();
+</script>
+</body>
+</html>
